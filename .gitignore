@@ -1,0 +1,12 @@
+#Secrets
+supersecrets.py
+.env
+.Renviron
+#Python Junk
+__pycache__/
+*.pyc
+venv/
+#R Junk
+.Rhistory
+.RData
+.Ruserdata
