@@ -9,6 +9,24 @@ echobase = {'host': shh.db_ip,
             'user': shh.db_user,
             'password': shh.db_password}
 
+def logger_jobber(job_name, status, error_msg = None):
+    try:
+        con = ps.connect(**echobase)
+        cur = con.cursor()
+        sql = """
+        INSERT INTO monitor.job_history (job_name, status, error_message)
+        VALUES (%s, %s, %s)
+        """
+
+        cur.execute(sql, (job_name, status, error_msg))
+        con.commit()
+        cur.close()
+        con.close()
+
+    except Exception as e:
+        print(f"log fail! {e}")
+        pass
+
 def rollover():
     today = date.today()
     month = today.strftime('%m')
@@ -20,6 +38,7 @@ def rollover():
 
     home = None
     cursor = None
+    success = False
 
     try:
         home = ps.connect(**echobase)
@@ -70,17 +89,24 @@ def rollover():
             cursor.execute(query_bb, (sql_date, budget, amt))
 
         home.commit()
+        success = True
 
     except Exception as e:
         if home:
             home.rollback()
         print(f"ERROR: {e}")
-        sys.exit(1)
+        success = False
 
     finally:
         if home:
             cursor.close()
             home.close()
+    
+    return success
 
 if __name__ == "__main__":
-    rollover()
+    didit = rollover()
+    if didit:
+        logger_jobber("EXPENSE_ROLLOVER", 1, "Success")
+    else:
+        logger_jobber("EXPENSE_ROLLOVER", 0, "Job Failed")

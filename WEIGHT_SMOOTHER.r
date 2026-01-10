@@ -8,33 +8,49 @@ library(zoo)
 library(RPostgres)
 library(DBI)
 
-con <- dbConnect(drv = Postgres(),
-                 dbname = Sys.getenv("db_home"),
-                 host = Sys.getenv("db_ip"),
-                 port = as.numeric(Sys.getenv("db_port"),
-                 user = Sys.getenv("db_user"),
-                 password = Sys.getenv("db_password"))
+tryCatch({
 
-NOW <- today()
-START <- NOW - months(1)
+  con <- dbConnect(drv = Postgres(),
+                   dbname = Sys.getenv("db_home"),
+                   host = Sys.getenv("db_ip"),
+                   port = as.numeric(Sys.getenv("db_port")),
+                   user = Sys.getenv("db_user"),
+                   password = Sys.getenv("db_password"))
 
-START_INT <- str_c(year(START),
-                   str_pad(month(START), 2, 'left', '0'),
-                   '01') %>% 
-  as.numeric()
+  NOW <- today()
+  START <- NOW - months(2)
 
-qry <- str_c("SELECT * FROM prd.weight WHERE CAST(tpd AS INTEGER) >= ", START_INT)
+  START_INT <- str_c(year(START),
+                     str_pad(month(START), 2, 'left', '0'),
+                     '01') %>% 
+    as.numeric()
 
-monthly_weights <- dbGetQuery(con, qry) %>%
-  mutate(tpd = as_date(tpd)) %>%
-  complete(tpd = full_seq(tpd, 1)) %>%
-  mutate(tod = ifelse(is.na(tod), "computed", tod),
-         weight = na.approx(weight, na.rm = FALSE))
+  qry <- str_c("SELECT * FROM prd.weight WHERE CAST(tpd AS INTEGER) >= ", START_INT)
 
-qry <- str_c("DELETE FROM prd.weight WHERE CAST(tpd AS INTEGER) >= ", START_INT)
-dbExecute(con, qry)
+  monthly_weights <- dbGetQuery(con, qry) %>%
+    mutate(tpd = as_date(tpd)) %>%
+    complete(tpd = full_seq(tpd, 1)) %>%
+    mutate(tod = ifelse(is.na(tod), "computed", tod),
+           tpd = format(tpd, "%Y%m%d"),
+           weight = na.approx(weight, na.rm = FALSE))
 
-dbWriteTable(con, SQL("prd.weight"), monthly_weights, append = TRUE, row.names = FALSE)
+  qry <- str_c("DELETE FROM prd.weight WHERE CAST(tpd AS INTEGER) >= ", START_INT)
+  dbExecute(con, qry)
 
-dbDisconnect(con)
+  dbWriteTable(con, SQL("prd.weight"), monthly_weights, append = TRUE, row.names = FALSE)
+  dbExecute(con, "INSERT INTO monitor.job_history (job_name, status, error_message) VALUES ($1, 1, 'Success')",
+            params = list("WEIGHT_SMOOTHER"))
+
+  dbDisconnect(con)
+
+}, error = function(e) {
+
+  dbExecute(con, "INSERT INTO monitor.job_history (job_name, status, error_message) VALUES ($1, 0, $2)",
+            params = list("WEIGHT_SMOOTHER", as.character(e)))
+
+  dbDisconnect(con)
+  stop(e)
+
+})
+
 
