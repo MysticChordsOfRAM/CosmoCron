@@ -23,6 +23,8 @@ library(glue)
 library(DBI)
 library(RPostgres)
 
+errors <- 0
+
 con <- dbConnect(drv = Postgres(),
                  dbname = Sys.getenv("db_sonr"),
                  host = Sys.getenv("db_ip"),
@@ -42,19 +44,9 @@ stringify_date <- function(date_object, dash = FALSE) {
   
 }
 
-table_update <- function(table_name, updater) {
-  
-  current_tbl <- dbGetQuery(con, str_c("SELECT * FROM ", table_name))
-  
-  history <- anti_join(current_tbl, updater, by = 'time_period')
-  
-  new_tbl <- bind_rows(history, updater)
-  
-  dbWriteTable(con, SQL(table_name), new_tbl, overwrite = TRUE)
-  
-}
+table_update_better <- function(db_con, tbl_schm, tbl_nm, updater) {
 
-table_update_better <- function(db_con, table_name, updater) {
+  table_name <- DBI::Id(schema = tbl_schm, table = tbl_nm)
 
   periods_to_replace <- unique(updater$time_period)
 
@@ -69,7 +61,7 @@ table_update_better <- function(db_con, table_name, updater) {
   
   }
 
-  dbWriteTable(db_con, SQL(table_name), updater, append = TRUE)
+  dbWriteTable(db_con, table_name, updater, append = TRUE)
 
 }
 
@@ -102,18 +94,28 @@ fetch_fred <- function(var_id) {
   data <- fromJSON(rawToChar(res$content))
 
   tbl <- data[["observations"]] %>%
-    mutate(time_period = str_remove(period, "-"),
+    mutate(time_period = str_remove(date, "-"),
     series_id = var_id)
 
   return(tbl)
 
 }
 
-ALLDATA <- map_dfr(to_pull, fetch_fred) %>%
-  select(series_id, time_period, value) %>%
-  left_join(fred_vars)
+tryCatch({
 
-table_update_better(con, 'api.fred', ALLDATA)
+  ALLDATA <- map_dfr(to_pull, fetch_fred) %>%
+    select(series_id, time_period, value) %>%
+    left_join(fred_vars)
+
+  table_update_better(con, 'api', 'fred', ALLDATA)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
+
 
 ###############################################################################\
 ##                                              ##             |              ##
@@ -146,7 +148,6 @@ url_freq <- "&frequency=monthly"
 url_wdw <- "&start=2024-01&end=2030-01"
 url_oth <- "&sort[0][column]=period&sort[0][direction]=desc&offset=0&length=5000"
 
-
 ## Electric Retail Sales ==================================================== ##
 url_base <- "https://api.eia.gov/v2/electricity/retail-sales/data/"
 url_vars <- "&data[0]=customers&data[1]=price&data[2]=sales"
@@ -160,13 +161,22 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-elec_pull <- fetch_eia(api_url) %>%
-  mutate(across(customers:sales, ~as.numeric(.x)),
-         period = str_c(str_remove(period, "-"), "01")) %>%
-  rename(time_period = period) %>%
-  pivot_longer(customers:sales, names_to = 'metric', values_to = 'val')
+tryCatch({
 
-table_update_better(con, 'api.eia_electric', elec_pull)
+  elec_pull <- fetch_eia(api_url) %>%
+    mutate(across(customers:sales, ~as.numeric(.x)),
+           period = str_c(str_remove(period, "-"), "01")) %>%
+    rename(time_period = period) %>%
+    pivot_longer(customers:sales, names_to = 'metric', values_to = 'val')
+
+  table_update_better(con, 'api', 'eia_electric', elec_pull)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Nat Gas Price ============================================================ ##
 
@@ -180,12 +190,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-ngprc_pull <- fetch_eia(api_url) %>%
-  mutate(value = as.numeric(value),
-         period = str_c(str_remove(period, "-"), "01")) %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_natgasprice', ngprc_pull)
+  ngprc_pull <- fetch_eia(api_url) %>%
+    mutate(value = as.numeric(value),
+           period = str_c(str_remove(period, "-"), "01")) %>%
+    rename(time_period = period, val = value)
+
+    table_update_better(con, 'api', 'eia_natgasprice', ngprc_pull)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 url_base <- "https://api.eia.gov/v2/natural-gas/cons/sum/data/"
 url_vars <- "&data[0]=value&facets[series][]=N3010FL2&facets[series][]=N3020FL2"
@@ -197,12 +216,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-ngcon_pull <- fetch_eia(api_url) %>%
-  mutate(value = as.numeric(value),
-         period = str_c(str_remove(period, "-"), "01")) %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_natgassales', ngcon_pull)
+  ngcon_pull <- fetch_eia(api_url) %>%
+    mutate(value = as.numeric(value),
+         period = str_c(str_remove(period, "-"), "01")) %>%
+    rename(time_period = period, val = value)
+
+    table_update_better(con, 'api', 'eia_natgassales', ngcon_pull)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Gas Prices =============================================================== ##
 
@@ -217,12 +245,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-gasolineprice <- fetch_eia(api_url) %>%
-  mutate(period = str_remove(period, "-"),
-         value = as.numeric(value)) %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_padd1cprice', gasolineprice)
+  gasolineprice <- fetch_eia(api_url) %>%
+    mutate(period = str_remove(period, "-"),
+           value = as.numeric(value)) %>%
+    rename(time_period = period, val = value)
+
+  table_update_better(con, 'api', 'eia_padd1cprice', gasolineprice)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Nat Gas in Storage ======================================================= ##
 
@@ -236,12 +273,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-ngstorage <- fetch_eia(api_url) %>%
-  mutate(period = str_remove(period, "-"),
-         value = as.numeric(value)) %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_natgasstorage', ngstorage)
+  ngstorage <- fetch_eia(api_url) %>%
+    mutate(period = str_remove(period, "-"),
+           value = as.numeric(value)) %>%
+    rename(time_period = period, val = value)
+
+  table_update_better(con, 'api', 'eia_natgasstorage', ngstorage)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Nat Gas Withdrawls ======================================================= ##
 
@@ -256,12 +302,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-ngoutput <- fetch_eia(api_url) %>%
-  mutate(period = str_c(str_remove(period, "-"), "01"),
-         value = as.numeric(value)) %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_natgasout', ngoutput)
+  ngoutput <- fetch_eia(api_url) %>%
+    mutate(period = str_c(str_remove(period, "-"), "01"),
+           value = as.numeric(value)) %>%
+    rename(time_period = period, val = value)
+
+  table_update_better(con, 'api', 'eia_natgasout', ngoutput)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Pipeline Imports ========================================================= ##
 
@@ -276,12 +331,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-pipelinein <- fetch_eia(api_url) %>%
-  mutate(period = str_c(str_remove(period, "-"), "01"),
-         value = as.numeric(value)) %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_pipelinein', pipelinein)
+  pipelinein <- fetch_eia(api_url) %>%
+    mutate(period = str_c(str_remove(period, "-"), "01"),
+           value = as.numeric(value)) %>%
+    rename(time_period = period, val = value)
+
+  table_update_better(con, 'api', 'eia_pipelinein', pipelinein)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Exports ================================================================== ##
 
@@ -295,13 +359,22 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-ngexports <- fetch_eia(api_url) %>%
-  mutate(period = str_c(str_remove(period, "-"), "01"),
-         value = as.numeric(value)) %>%
-  filter(units == 'MMCF') %>%
-  rename(time_period = period, val = value)
+tryCatch({
 
-table_update_better(con, 'api.eia_ngexports', ngexports)
+  ngexports <- fetch_eia(api_url) %>%
+    mutate(period = str_c(str_remove(period, "-"), "01"),
+           value = as.numeric(value)) %>%
+    filter(units == 'MMCF') %>%
+    rename(time_period = period, val = value)
+  
+  table_update_better(con, 'api', 'eia_ngexports', ngexports)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ## Henry Hub Price of Natural Gas =========================================== ##
 
@@ -316,12 +389,21 @@ api_url <- str_c(url_base,
                  url_wdw,
                  url_oth)
 
-henryhub <- fetch_eia(api_url) %>%
-  mutate(period = str_remove(period, "-"),
-         value = as.numeric(value)) %>%
-  rename(time_period = period, val = value)
+tryCatch({
+  
+  henryhub <- fetch_eia(api_url) %>%
+    mutate(period = str_remove(period, "-"),
+           value = as.numeric(value)) %>%
+    rename(time_period = period, val = value)
 
-table_update_better(con, 'api.eia_henryhub', henryhub)
+  table_update_better(con, 'api', 'eia_henryhub', henryhub)
+
+}, error = function(e) {
+
+  print(e)
+  errors <- errors + 1
+  
+})
 
 ###############################################################################\
 ##                                              ##           __               ##
@@ -397,6 +479,7 @@ for (ss in 1:length(starts)) {
         if (tries == 50) {
           
           print('too broken, sorry')
+          errors <- errors + 1
           
           break
           
@@ -404,17 +487,26 @@ for (ss in 1:length(starts)) {
         
       }
       
-      data <- content(response, as = "text")
-      json_data <- fromJSON(data, flatten = TRUE)
+      tryCatch({
+
+        data <- content(response, as = "text")
+        json_data <- fromJSON(data, flatten = TRUE)
       
-      raw_set <- json_data$results %>%
-        mutate(date = as_date(date),
-               station = str_sub(station, 7, -1),
-               var = vv) %>%
-        select(obs_date = date, station, value, var)
+        raw_set <- json_data$results %>%
+          mutate(date = as_date(date),
+                  station = str_sub(station, 7, -1),
+                  var = vv) %>%
+          select(obs_date = date, station, value, var)
       
-      output2 <- bind_rows(output2, raw_set)
-      
+          output2 <- bind_rows(output2, raw_set)
+
+      }, error = function(e){
+        
+        print(e)
+        errors <- errors + 1
+
+      })
+         
     }
     
     Sys.sleep(3)
@@ -432,6 +524,25 @@ output5 <- output2 %>%
   mutate(time_period = str_remove(obs_date, "-")) %>%
   select(-obs_date)
 
-table_update_better(con, 'api.ncei_select', output5)
+table_update_better(con, 'api', 'ncei_select', output5)
 
 dbDisconnect(con)
+
+home <- dbConnect(drv = Postgres(),
+                  dbname = Sys.getenv("db_home"),
+                  host = Sys.getenv("db_ip"),
+                  port = as.numeric(Sys.getenv("db_port")),
+                  user = Sys.getenv("db_user"),
+                  password = Sys.getenv("db_password"))
+
+if (errors > 0) {
+
+  log_entry <- tibble(job_name = "SONR", status = 0, error_message = str_c("NUM ERRORS: ", errors))
+  dbWriteTable(home, DBI::Id(schema = "monitor", table = "job_history"), log_entry, append = TRUE)
+
+} else {
+
+  log_entry <- tibble(job_name = "SONR", status = 1, error_message = "SUCCESS")
+  dbWriteTable(home, DBI::Id(schema = "monitor", table = "job_history"), log_entry, append = TRUE)
+
+}

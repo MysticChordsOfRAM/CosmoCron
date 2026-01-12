@@ -22,11 +22,11 @@ tryCatch({
                    password = Sys.getenv("db_password"))
 
   home <- dbConnect(drv = Postgres(),
-                   dbname = Sys.getenv("db_home"),
-                   host = Sys.getenv("db_ip"),
-                   port = as.numeric(Sys.getenv("db_port")),
-                   user = Sys.getenv("db_user"),
-                   password = Sys.getenv("db_password"))
+                    dbname = Sys.getenv("db_home"),
+                    host = Sys.getenv("db_ip"),
+                    port = as.numeric(Sys.getenv("db_port")),
+                    user = Sys.getenv("db_user"),
+                    password = Sys.getenv("db_password"))
 
   api_key <- Sys.getenv("jolts_api_key")
   url <- 'https://api.bls.gov/publicAPI/v2/timeseries/data/'

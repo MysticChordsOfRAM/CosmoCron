@@ -8,6 +8,8 @@ library(zoo)
 library(RPostgres)
 library(DBI)
 
+print('--BEGIN WEIGHT_SMOOTHER.R--')
+
 tryCatch({
 
   con <- dbConnect(drv = Postgres(),
@@ -30,6 +32,7 @@ tryCatch({
   monthly_weights <- dbGetQuery(con, qry) %>%
     mutate(tpd = as_date(tpd)) %>%
     complete(tpd = full_seq(tpd, 1)) %>%
+    arrange(tpd) %>%
     mutate(tod = ifelse(is.na(tod), "computed", tod),
            tpd = format(tpd, "%Y%m%d"),
            weight = na.approx(weight, na.rm = FALSE))
@@ -42,6 +45,7 @@ tryCatch({
             params = list("WEIGHT_SMOOTHER"))
 
   dbDisconnect(con)
+  print('--END WEIGHT_SMOOTHER.R--')
 
 }, error = function(e) {
 
