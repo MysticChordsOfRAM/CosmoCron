@@ -19,7 +19,7 @@ DB_CONFIG = {
     "port": shh.db_port
 }
 
-OLLAMA_URL = "http://10.18.20.7:11434/api/generate"
+OLLAMA_URL = f"http://{shh.db_ip}:11434/api/generate"
 MODEL_NAME = "llama3.1:8b"
 TIME_WINDOW_START = 3
 TIME_WINDOW_END = 12
