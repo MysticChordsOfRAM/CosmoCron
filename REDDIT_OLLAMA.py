@@ -267,6 +267,43 @@ class CommentContext():
             
         return post_snippet
 
+def temp_check(limit = 93.0):
+
+    prom_api_url = f"http://{shh.db_ip}:9090/api/v1/query"
+
+    prom_qry = """
+    node_hwmon_temp_celsius{instance="node_exporter:9100", chip="pci0000:00_0000:00:18_3", sensor="temp3"}
+    """
+
+    try:
+        response = requests.get(prom_api_url, params={'query': prom_ql}, timeout=2)
+
+        if response.status_code == 200:
+            data = response.json()
+
+            results = gata.get('data', {}).get('result', [])
+
+            if results:
+
+                current_temp = float(results[0]['value'][1])
+
+                if current_temp >= limit:
+                    return False, current_temp
+                else:
+                    return True, current_temp
+            
+            else:
+                print("[WARN] Prometheus query returned empty")
+                return True, 0.0
+            
+        else:
+            print(f"[WARN] Promtheus API Broke -- {response.status_code}")
+            return True, 0.0
+
+    except Exception as e:
+        print(f"Comeplete Failure to check temps - {e}")
+        return True, 0.0
+
 def is_go_time(start_time, finish_time, testing_mode = False):
     
     current_hour = datetime.datetime.now().hour
@@ -376,6 +413,13 @@ def lets_a_go():
     home = start_connection()
     
     while True:
+
+        is_safe, current_temp = temp_check(limit = 93)
+
+        if not is_safe:
+            msg = f"Thermal Shutdown {current_temp}c @ {datetime.datetime.now()}"
+            print(f"[!!!] {msq}")
+            logger_jobber('REDDIT OLLAMA', 0, msg)
         
         if not is_go_time(TIME_WINDOW_START, TIME_WINDOW_END, testing_mode = True):
             print(f"Ceasing Run @ {datetime.datetime.now()}")
