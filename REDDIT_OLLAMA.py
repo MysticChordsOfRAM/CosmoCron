@@ -276,12 +276,12 @@ def temp_check(limit = 93.0):
     """
 
     try:
-        response = requests.get(prom_api_url, params={'query': prom_ql}, timeout=2)
+        response = requests.get(prom_api_url, params={'query': prom_qry}, timeout=2)
 
         if response.status_code == 200:
             data = response.json()
 
-            results = gata.get('data', {}).get('result', [])
+            results = data.get('data', {}).get('result', [])
 
             if results:
 
@@ -418,10 +418,10 @@ def lets_a_go():
 
         if not is_safe:
             msg = f"Thermal Shutdown {current_temp}c @ {datetime.datetime.now()}"
-            print(f"[!!!] {msq}")
+            print(f"[!!!] {msg}")
             logger_jobber('REDDIT OLLAMA', 0, msg)
         
-        if not is_go_time(TIME_WINDOW_START, TIME_WINDOW_END, testing_mode = True):
+        if not is_go_time(TIME_WINDOW_START, TIME_WINDOW_END, testing_mode = False):
             print(f"Ceasing Run @ {datetime.datetime.now()}")
             logger_jobber('REDDIT OLLAMA', 1, 'Success')
             break
