@@ -165,7 +165,7 @@ def track_n_tag():
     SELECT post_id, post_url
     FROM reddit.staging
     WHERE scrape_status = 'pending'
-    AND created_utc - NOW() - INTERVAL '72 hours'
+    AND created_utc < NOW() - INTERVAL '72 hours'
     ORDER BY created_utc ASC
     LIMIT 1;
     """
