@@ -25,7 +25,7 @@ class Post():
         
     def make_comment_url(self):
         
-        return f"https://www.reddit.com{self.permalink}.json?sort=top"
+        return f"https://www.reddit.com{self.post_url}.json?sort=top"
     
     def package_post(self):
 
@@ -166,16 +166,15 @@ def track_n_tag():
     FROM reddit.staging
     WHERE scrape_status = 'pending'
     AND created_utc < NOW() - INTERVAL '72 hours'
-    ORDER BY created_utc ASC
-    LIMIT 1;
+    ORDER BY created_utc ASC;
     """
 
     cur.execute(sql)
-    row = cur.fetchone()
+    data = cur.fetchall()
     cur.close()
     con.close()
 
-    return row
+    return data
 
 def parse_post(post_json):
 
@@ -187,7 +186,7 @@ def parse_post(post_json):
         selftext = data.get('selftext'),
         score = data.get('score'),
         upvote_ratio = data.get('upvote_ratio'),
-        permalink = data.get('permalink'),
+        post_url = data.get('permalink'),
         ID = data.get('id'),
         num_comments = data.get('num_comments'),
         over_18 = data.get('over_18'),
@@ -243,7 +242,7 @@ def save_data(POST, COMMENTS):
     post_sql = """
     INSERT INTO reddit.posts
     (post_id, subreddit, title, selftext, score, upvote_ratio,
-    post_url, num_comments, over_18, created_utc)
+    permalink, num_comments, over_18, created_utc)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (post_id) DO UPDATE
     SET score = EXCLUDED.score,
@@ -286,43 +285,50 @@ def update_staging_status(post_id, status):
     con.close()
 
 def capture_data():
-    task = track_n_tag()
-    if not task:
+    data = track_n_tag()
+
+    if not data:
         print("Nothing Pending")
         return True
+    
+    all_successful = True
 
-    post_id, target_url = task
-    print(f"Capturing {post_id}")
+    for task in data:
+        post_id, target_url = task
+        print(f"Capturing {post_id}")
 
-    try:
-        time.sleep(random.randint(5, 30))
-        resp = requests.get(target_url, headers = headers)
+        try:
+            time.sleep(random.randint(3, 14))
+            resp = requests.get(target_url, headers = headers)
 
-        if resp.status_code != 200:
-            print(f"Reddit not happy! {resp.status_code}")
-            update_staging_status(post_id, 'failed')
-            return False
+            if resp.status_code != 200:
+                print(f"Reddit not happy! {resp.status_code}")
+                update_staging_status(post_id, 'failed')
+                all_successful = False
+                continue
         
-        json_data = resp.json()
+            json_data = resp.json()
 
-        POST = parse_post(json_data[0])
-        raw_comments = json_data[1]['data']['children']
-        COMMENTS = extraction(raw_comments, post_id)
+            POST = parse_post(json_data[0])
+            raw_comments = json_data[1]['data']['children']
+            COMMENTS = extraction(raw_comments, post_id)
 
-        print(f"Grabbed {len(COMMENTS)} comments!")
+            print(f"Grabbed {len(COMMENTS)} comments!")
 
-        success = save_data(POST, COMMENTS)
+            success = save_data(POST, COMMENTS)
 
-        if success:
-            update_staging_status(post_id, 'scraped')
-            return True
-        else:
+            if success:
+                update_staging_status(post_id, 'scraped')
+
+            else:
+                update_staging_status(post_id, 'failed')
+                all_successful = False
+        except Exception as e:
+            print(f'Error! {e}')
             update_staging_status(post_id, 'failed')
-            return False
-    except Exception as e:
-        print(f'Error! {e}')
-        update_staging_status(post_id, 'failed')
-        return False
+            all_successful = False
+    
+    return all_successful
     
 if __name__ == "__main__":
 
