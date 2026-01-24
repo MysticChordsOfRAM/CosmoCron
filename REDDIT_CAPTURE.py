@@ -70,25 +70,6 @@ class Comment():
         
         return tuptup
 
-def logger_jobber(job_name, status, error_msg = None):
-    try:
-        con = get_db_connection()
-        cur = con.cursor()
-        sql = """
-        INSERT INTO monitor.job_history (job_name, status, error_message)
-        VALUES (%s, %s, %s)
-        """
-
-        cur.execute(sql, (job_name, status, error_msg))
-        con.commit()
-        cur.close()
-        con.close()
-
-    except Exception as e:
-        print(f"log fail! {e}")
-        pass
-    
-
 def get_db_connection():
     
     con = psycopg2.connect(
@@ -289,9 +270,7 @@ def capture_data():
 
     if not data:
         print("Nothing Pending")
-        return True
-    
-    all_successful = True
+        return None
 
     for task in data:
         post_id, target_url = task
@@ -304,7 +283,6 @@ def capture_data():
             if resp.status_code != 200:
                 print(f"Reddit not happy! {resp.status_code}")
                 update_staging_status(post_id, 'failed')
-                all_successful = False
                 continue
         
             json_data = resp.json()
@@ -322,13 +300,11 @@ def capture_data():
 
             else:
                 update_staging_status(post_id, 'failed')
-                all_successful = False
+
         except Exception as e:
             print(f'Error! {e}')
             update_staging_status(post_id, 'failed')
-            all_successful = False
-    
-    return all_successful
+            continue
     
 if __name__ == "__main__":
 
@@ -338,11 +314,6 @@ if __name__ == "__main__":
         pass
 
     print(f"CAPTURE @ {datetime.datetime.now()}")
-    success = capture_data()
-
-    if success:
-        logger_jobber('REDDIT_RUN', 1, 'Success')
-    else:
-        logger_jobber('REDDIT_RUN', 0, 'Failed')
+    capture_data()
 
     print('sleep')    

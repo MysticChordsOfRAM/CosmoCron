@@ -314,21 +314,6 @@ def start_connection():
     
     return psycopg2.connect(**DB_CONFIG)
 
-def logger_jobber(job_name, status, error_msg=None):
-    try:
-        con = start_connection()
-        cur = con.cursor()
-        sql = """
-        INSERT INTO monitor.job_history (job_name, status, error_message)
-        VALUES (%s, %s, %s)
-        """
-        cur.execute(sql, (job_name, status, error_msg))
-        con.commit()
-        cur.close()
-        con.close()
-    except Exception as e:
-        print(f"Log fail! {e}")
-
 def fetch_comments(connection):
     
     sql = """
@@ -336,7 +321,9 @@ def fetch_comments(connection):
     FROM reddit.comments c
     JOIN reddit.posts p ON c.post_id = p.post_id
     WHERE c.ollama_scored_at IS NULL 
-    AND distinguished IS NULL AND body <> '[deleted]' AND body <> '[removed]'
+    AND c.distinguished IS NULL 
+    AND c.body NOT IN ('[deleted]', '[removed]')
+    AND LENGTH(c.body) > 10
     LIMIT 1;
     """
     
@@ -419,12 +406,10 @@ def lets_a_go():
         if not is_safe:
             msg = f"Thermal Shutdown {current_temp}c @ {datetime.datetime.now()}"
             print(f"[!!!] {msg}")
-            logger_jobber('REDDIT OLLAMA', 0, msg)
             break
         
         if not is_go_time(TIME_WINDOW_START, TIME_WINDOW_END, testing_mode = False):
             print(f"Ceasing Run @ {datetime.datetime.now()}")
-            logger_jobber('REDDIT OLLAMA', 1, 'Success')
             break
         
         try:
@@ -432,7 +417,6 @@ def lets_a_go():
             
             if comment is None:
                 print(f'No unprocessed comments found - breaking @ {datetime.datetime.now()}')
-                logger_jobber('REDDIT OLLAMA', 1, 'Success')
                 break
             
             print('----------------------------------------------------------')
@@ -442,7 +426,6 @@ def lets_a_go():
                         
             with home.cursor() as cur:
             
-                
                 if scores:
                     sql = """
                     UPDATE reddit.comments
@@ -480,12 +463,10 @@ def lets_a_go():
                 
         except KeyboardInterrupt:
             print(f'Manual Stop. Comments processed: {comments_processed}')
-            logger_jobber('REDDIT OLLAMA', 1, 'Success')
             break
                 
         except Exception as e:
             print(f'[!!] MAJOR ERROR -- {e}')
-            logger_jobber('REDDIT OLLAMA', 0, str(e))
             break
         
     home.close()

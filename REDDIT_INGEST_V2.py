@@ -65,24 +65,6 @@ def init_db():
     cur.close()
     con.close()
 
-def logger_jobber(job_name, status, error_msg = None):
-    try:
-        con = get_db_connection()
-        cur = con.cursor()
-        sql = """
-        INSERT INTO monitor.job_history (job_name, status, error_message)
-        VALUES (%s, %s, %s)
-        """
-
-        cur.execute(sql, (job_name, status, error_msg))
-        con.commit()
-        cur.close()
-        con.close()
-
-    except Exception as e:
-        print(f"log fail! {e}")
-        pass
-
 def time_converter():
     NOW = datetime.datetime.now()
     HOUR = NOW.hour
@@ -111,13 +93,11 @@ def go_get_it(subreddit):
         
         if resp.status_code != 200:
             print(f'Fetch failed -- Status: {resp.status_code} -- {datetime.datetime.now()} --')
-            return False
         
         posts = resp.json()['data']['children']
         
     except Exception as e:
         print(f"Python Error: {e} -- {datetime.datetime.now()}")
-        return False
     
     for p in posts:
         post_data = p['data']
@@ -151,8 +131,6 @@ def go_get_it(subreddit):
             
     cur.close()
     con.close()
-
-    return True
     
 if __name__ == '__main__':
     try:
@@ -170,15 +148,9 @@ if __name__ == '__main__':
         
         time.sleep(random.randint(30, 90))
         
-        win = go_get_it(capture_target)
-
-        if win:
-            logger_jobber("REDDIT_INGEST", 1, "Success")
-        else:
-            logger_jobber("REDDIT_INGEST", 0, "Job Failed")
+        go_get_it(capture_target)
 
     else:
         print('time_converter failed - no capture')
-        logger_jobber("REDDIT_INGEST", 0, "Job Failed")
         
     print(f"Fin {datetime.datetime.now()}")
