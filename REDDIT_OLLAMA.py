@@ -74,22 +74,22 @@ You must return a JSON object with a "reasoning" field first.
 
 **EXAMPLE 1:**
     **CONTEXT**
-    Subreddit Post: "Man has his 4th Amendment right violated while skateboarding across America"
-    Post Body: ""
-    
+    Subreddit Post: "Progress Is Starting to Feel Less Linear"
+    Post Body: "Some technologies stall for years then suddenly accelerate. Others peak early and quietly fade. It’s getting harder to predict which breakthroughs matter long term and which are dead ends. The future feels less like a straight line forward and more like a series of uneven jumps."
+    Parent Comment: Not everyone will resonate with every post, and that’s fine. I’ll continue sharing perspectives I think add value.
     
     **TARGET COMMENT**
-    "Rights? This is the US lol, you think we have rights? Turn on the news."
+    "resonate". Look at you, you can't even write a single line without resorting to chatGPT. And you say you're "adding value"? You're removing value from this website by spamming it full of pointless, shallow engagement bait that you didn't even come up with."
     
     **INSTRUCTION**
     Analyze the TARGET COMMENT. Return JSON.
     
 
 {
-  "reasoning": "'Right?' Indicates a humorous agreement with a previous post, therefore slight positive social intent. However it also indicates a negative view of American Sociery, so negative outlook. Humor is laced with a sinciere cynicism so negative valence.",
-  "valence": -1,
-  "social_intent": 4,
-  "outlook": -4
+  "reasoning": "Comment is outwardly hostile to the parent comment, questioning their value in the discussion and mocking them for using AI. Negative Valence, Negative Social Intent, Neutral Outlook.",
+  "valence": -7,
+  "social_intent": -7,
+  "outlook": 0
 }
 
 **EXAMPLE 2:**
@@ -336,7 +336,7 @@ def fetch_comments(connection):
     FROM reddit.comments c
     JOIN reddit.posts p ON c.post_id = p.post_id
     WHERE c.ollama_scored_at IS NULL 
-    AND distinguished IS NULL AND comment_depth <= 5 AND LENGTH(body) > 10
+    AND distinguished IS NULL AND body <> '[deleted]' AND body <> '[removed]'
     LIMIT 1;
     """
     
