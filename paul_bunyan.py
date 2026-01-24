@@ -49,7 +49,7 @@ def main():
         cwd = '/app'
     )
     exit_code = result.returncode
-    output_log = f"STDOUT:\n{result.stdout}\n\nSTDERR:\,{result.stderr}"
+    output_log = f"STDOUT:\n{result.stdout}\n\nSTDERR:{result.stderr}"
 
     end_time = time.time()
     end_dt = datetime.now()
