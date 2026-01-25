@@ -7,6 +7,7 @@ Created on Fri Jan  9 07:09:07 2026
 
 import datetime
 import json
+import time
 import requests
 import psycopg2
 import supersecrets as shh
@@ -401,12 +402,12 @@ def lets_a_go():
     
     while True:
 
-        is_safe, current_temp = temp_check(limit = 93)
+        is_safe, current_temp = temp_check(limit = 96)
 
         if not is_safe:
-            msg = f"Thermal Shutdown {current_temp}c @ {datetime.datetime.now()}"
+            msg = f"Thermal Pause {current_temp}c @ {datetime.datetime.now()}"
             print(f"[!!!] {msg}")
-            break
+            time.sleep(300)
         
         if not is_go_time(TIME_WINDOW_START, TIME_WINDOW_END, testing_mode = False):
             print(f"Ceasing Run @ {datetime.datetime.now()}")

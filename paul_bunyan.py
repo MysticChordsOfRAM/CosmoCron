@@ -6,27 +6,29 @@ import psycopg2
 from datetime import datetime
 import supersecrets as shh
 
+db_params = {"host": shh.db_ip,
+             "database": shh.db_name,
+             "user": shh.db_user,
+             "password": shh.db_password,
+             "port": shh.db_port}
+
 def logging(job_name, command, start_dt, end_dt, duration, exit_code, output):
 
     status = "SUCCESS" if exit_code == 0 else "FAILURE"
 
     device_name = 'COSMO'
 
-    home = psycopg2.connect({"host": shh.db_ip,
-                             "database": shh.db_name,
-                             "user": shh.db_user,
-                             "password": shh.db_password,
-                             "port": shh.db_port})
+    home = psycopg2.connect(**db_params)
 
     sql = """
-    INSERT INTO job_history 
+    INSERT INTO monitor.job_history2 
     (job_name, device_name, command, start_time, end_time, duration_seconds, exit_code, status, output_log)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     with home.cursor() as cur:
         cur.execute(sql, (job_name, device_name, command, start_dt, end_dt, duration, exit_code, status, output))
-        home.commite()
+        home.commit()
     home.close()
 
 def main():
@@ -66,3 +68,7 @@ def main():
     )
 
     sys.exit(exit_code)
+
+if __name__ == '__main__':
+    main()
+
