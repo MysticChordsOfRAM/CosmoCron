@@ -26,7 +26,7 @@ DB_PARAMS = {'host': shh.db_ip,
 			 'port': shh.db_port}
 
 class CalendarEvent(BaseModel):
-    title: str = Field(description="The name of the meeting (e.g., 'Impact Conference')")
+    title: str = Field(description="The topic of the meeting, taken from the TOPIC Column (e.g., 'Impact Conference').")
     date: str = Field(description="The date of the event in DD-MM format")
     start_time: str = Field(description="Start time in 24-hour HH:MM format")
     location: Optional[str] = Field(None, description="The room number or venue name")
@@ -87,11 +87,12 @@ def make_gemini_do_the_hard_part(client, model, document, retries = 4):
 
 	Rules:
 	1. Date Handling: Convert all dates to DD-MM.
-	2. Cancellations: If an event has a strikethrough or the word "CANCELED" (bold or otherwise) is next to it, set the status field to "cancelled". 
+	2. Title Handling: Do NOT merge the contents of the Conference and the Topic Columns. The title is to be taken from the Topic Column only.
+	3. Cancellations: If an event has a strikethrough or the word "CANCELED" (bold or otherwise) is next to it, set the status field to "cancelled". 
 	   Move any cancellation notes (e.g., "Moved to Friday") into the description.
-	3. Time: Convert all times to 24-hour format (HH:MM).
-	4. Cleanup: Ignore all page headers, footers, and decorative text.
-	5. Output: Return only a valid JSON list of events.
+	4. Time: Convert all times to 24-hour format (HH:MM).
+	5. Cleanup: Ignore all page headers, footers, and decorative text.
+	6. Output: Return only a valid JSON list of events.
 	"""
 		
 	log("Gemini Working...")
