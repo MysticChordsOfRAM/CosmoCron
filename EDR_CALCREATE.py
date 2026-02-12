@@ -149,15 +149,29 @@ def pull_calendar():
 		return None
 		
 	parsed_events = []
-	current_year = datetime.now().year
 	timezone = pytz.timezone('US/Eastern')
 	
+	current_time = datetime.now()
+	running_year = current_time.year
+
+	first_event_month = int(event_list[0]['date'].split('-')[1])
+	if current_time.month < 6 and first_event_month > 6:
+		running_year -= 1
+
+	last_month = first_event_month
+
+
 	for item in event_list:
-		DATE = item['date']
+		DAY, MONTH = map(int, item['date'].split('-'))
 		TIME = item['start_time']
 
+		if MONTH < last_month:
+			running_year += 1
+
+		last_month = MONTH
+
 		try:
-			dt_str = f"{DATE} {current_year} {TIME}"
+			dt_str = f"{DAY}-{MONTH} {running_year} {TIME}"
 			dt_naive = datetime.strptime(dt_str, "%d-%m %Y %H:%M")
 			dt = timezone.localize(dt_naive)
 

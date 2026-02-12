@@ -280,7 +280,7 @@ def hit_send_you_coward(limit = 8000):
 
     comment_series = fetch_comments(home, limit)
 
-    load_file = assemble_batch(home, comment_series)
+    load_file = assemble_batch(comment_series)
     up = client.files.upload(file = load_file)
     job = client.batches.create(model = MODEL_NAME, src = up.name)
 

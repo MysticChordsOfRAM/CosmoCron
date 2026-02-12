@@ -85,7 +85,7 @@ def go_get_it(subreddit):
     
     print(f"-- {datetime.datetime.now()} --  <<>> -- {subreddit} --")
     
-    target_url = "https://www.reddit.com/r/" + subreddit + "/top.json?limit=10&t=day"
+    target_url = "https://www.reddit.com/r/" + subreddit + "/top.json?limit=1&t=day"
     
     try:
         time.sleep(random.randint(15, 30))
