@@ -8,6 +8,7 @@ Created on Fri Jan  9 07:09:07 2026
 import datetime
 import json
 import psycopg2
+from psycopg2 import extras
 import supersecrets as shh
 from random import randint
 from pydantic import BaseModel, Field
@@ -110,6 +111,9 @@ class CommentContext():
         return post_snippet
 
 class SentimentResponse(BaseModel):
+    comment_id: str = Field(
+        description="Return the exact ID provided in the context context."
+    )
     reasoning: str = Field(
         description="A brief explanation of why the scores were chosen based on the comment text."
     )
@@ -130,68 +134,104 @@ def start_connection():
     
     return psycopg2.connect(**DB_CONFIG)
 
-def get_latest_job(connection):
+def clean_schema(model_class):
+    schema = model_class.model_json_schema()
+    
+    def recursive_fix(s):
+        if "type" in s and isinstance(s["type"], str):
+            s["type"] = s["type"].upper()
+            
+        if "title" in s:
+            del s["title"]
+            
+        if "properties" in s:
+            for _, v in s["properties"].items():
+                recursive_fix(v)
+        if "items" in s:
+            recursive_fix(s["items"])
+            
+        return s
+
+    return recursive_fix(schema)
+
+def get_pending_jobs(connection):
     with connection.cursor() as cur:
         cur.execute("""
-            SELECT job_id FROM reddit.batch_jobs 
+            SELECT job_id FROM reddit.batch_meta 
             WHERE status NOT IN ('SUCCEEDED', 'FAILED') 
-            ORDER BY submitted_at ASC LIMIT 1
+            ORDER BY submitted_at ASC
         """)
-        res = cur.fetchone()
-        return res[0] if res else None
+        res = cur.fetchall()
+
+        return [row[0] for row in res] if res else []
     
 def download_update():
     home = start_connection()
 
-    job_id = get_latest_job(home)
-    if not job_id:
-        print('No job to download')
-        return None
+    pending_jobs = get_pending_jobs(home)
+    if not pending_jobs:
+        print('No pending jobs in the database to check.')
+        home.close()
+        return False
     
-    job = client.batches.get(name = job_id)
-
-    if job.state_name != 'JOB_STATE_SUCCEEDED':
-        print('Job run failed?')
-        return None
+    print(f"Found {len(pending_jobs)} pending jobs. Checking statuses...")
     
-    print('Verified Job Completion, Downloading...')
+    for job_id in pending_jobs:
+        print(f"Checking {job_id}...")
+        job = client.batches.get(name = job_id)
 
-    output_file = job.output_file_names[0]
-    content = client.files.download(name = output_file)
+        # 1. Handle jobs still in progress
+        if job.state.name in ['JOB_STATE_PENDING', 'JOB_STATE_RUNNING', 'JOB_STATE_SCHEDULING']:
+            print(f" -> Job is still {job.state.name}. Skipping for now.")
+            continue
+            
+        # 2. Handle jobs that failed on Google's end
+        if job.state.name == 'JOB_STATE_FAILED':
+            print(f" -> Job FAILED. Updating database so we stop checking it.")
+            with home.cursor() as cur:
+                cur.execute("UPDATE reddit.batch_meta SET status = 'FAILED' WHERE job_id = %s", (job_id,))
+            home.commit()
+            continue
 
-    update_data = []
-    failed_validation = 0
+        # 3. Handle successful jobs
+        if job.state.name == 'JOB_STATE_SUCCEEDED':
+            print(f" -> Verified Job Completion, Downloading...")
+            output_file = job.dest.file_name
+            content = client.files.download(file = output_file)
 
-    for line in content.decode().splitlines():
-        data = json.loads(line)
-        comment_id = data['key']
-        raw_text = data['response']['candidates'][0]['content']['parts'][0]['text']
+            update_data = []
+            failed_validation = 0
 
-        try:
-            scores = SentimentResponse.model_validate_json(raw_text)
-            update_data.append((scores.valence, scores.social_intent, scores.outlook,
-                                scores.reasoning, comment_id))
-        except Exception as e:
-            print('Validation Failure')
-            failed_validation += 1
-        
-    sql = """
-        UPDATE reddit.comments AS c SET
-            gemini_scored_at = NOW(),
-            valence = v.val, social_intent = v.soc, outlook = v.out, gemini_reasoning = v.reas,
-            submitted_to_gemini = FALSE
-        FROM (VALUES %s) AS v(val, soc, out, reas, id)
-        WHERE c.comment_id = v.id
-    """
+            for line in content.decode().splitlines():
+                data = json.loads(line)
+                raw_text = data['response']['candidates'][0]['content']['parts'][0]['text']
 
-    with home.cursor() as cur:
-        if update_data:
-            psycopg2.extras.execute_values(cur, sql, update_data)
-        cur.execute("UPDATE reddit.batch_jobs SET status = 'SUCCEEDED', completed_at = NOW() WHERE job_id = %s", (job_id,))
-    
-    home.commit()
+                try:
+                    scores = SentimentResponse.model_validate_json(raw_text)
+                    comment_id = scores.comment_id
+                    update_data.append((scores.valence, scores.social_intent, scores.outlook,
+                                        scores.reasoning, comment_id))
+                except Exception as e:
+                    failed_validation += 1
+            
+            sql = """
+                UPDATE reddit.comments AS c SET
+                    gemini_scored_at = NOW(),
+                    valence = v.val, social_intent = v.soc, outlook = v.out, gemini_reasoning = v.reas,
+                    submitted_to_gemini = FALSE
+                FROM (VALUES %s) AS v(val, soc, out, reas, id)
+                WHERE c.comment_id = v.id
+            """
+
+            with home.cursor() as cur:
+                if update_data:
+                    extras.execute_values(cur, sql, update_data)
+                cur.execute("UPDATE reddit.batch_meta SET status = 'SUCCEEDED', completed_at = NOW() WHERE job_id = %s", (job_id,))
+            
+            home.commit()
+            print(f" -> Pipeline complete for {job_id}: {len(update_data)} updated, {failed_validation} failed validation.")
+
     home.close()
-    print(f"Pipeline complete: {len(update_data)} updated, {failed_validation} failed validation.")
     return True
 
 def fetch_comments(connection, limit):
@@ -236,6 +276,9 @@ def fetch_comments(connection, limit):
 def make_ro(comment):
     
     user_prompt = f"""
+    **METADATA**
+    ID: {comment.comment_id}
+
     **CONTEXT**
     Subreddit Post: "{comment.post_title}"
     Post Body: "{comment.snip_text()}"
@@ -249,13 +292,12 @@ def make_ro(comment):
     """
 
     ro = {
-        "key": comment.comment_id,
         "request": {
-            "system_instruction": {"parts": [{"text": get_final_system_prompt()}]},
+            "systemInstruction": {"parts": [{"text": get_final_system_prompt()}]},
             "contents": [{"parts": [{"text": user_prompt}]}],
-            "generation_config": {
-                "response_mime_type": "application/json",
-                "response_schema": SentimentResponse.model_json_schema()
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseSchema": clean_schema(SentimentResponse)
             }
           }
         }
@@ -275,13 +317,24 @@ def assemble_batch(comment_array):
 
     return filename
 
-def hit_send_you_coward(limit = 8000):
+def hit_send_you_coward(limit = 2500):
     home = start_connection()
 
+    pending_jobs = get_pending_jobs(home)
+    if pending_jobs:
+        print(f"Skipping submission: Found {len(pending_jobs)} job(s) already in the queue.")
+        home.close()
+        return False
+
     comment_series = fetch_comments(home, limit)
+    
+    if not comment_series:
+        print("No new comments to process.")
+        home.close()
+        return False
 
     load_file = assemble_batch(comment_series)
-    up = client.files.upload(file = load_file)
+    up = client.files.upload(file = load_file, config = types.UploadFileConfig(mime_type = 'text/plain'))
     job = client.batches.create(model = MODEL_NAME, src = up.name)
 
     sql_meta = """
@@ -302,5 +355,10 @@ def hit_send_you_coward(limit = 8000):
     home.close()
 
 if __name__ == "__main__":
-    hit_send_you_coward(limit = 1000)
+    print('-- Phase 1: Checking for completed jobs ---')
     download_update()
+    
+    print('--- Phase 2: Submitting new job ---')
+    hit_send_you_coward(limit = 1500)
+    
+    print('Cycle complete!')
