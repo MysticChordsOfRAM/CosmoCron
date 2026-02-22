@@ -103,8 +103,8 @@ class CommentContext():
         if not text:
             return "N/A"
         
-        if len(text) > 500:
-            post_snippet = text[:250] + " ... " + text[-250:]
+        if len(text) > 300:
+            post_snippet = text[:200] + " ... " + text[-100:]
         else:
             post_snippet = text
             
@@ -236,15 +236,47 @@ def download_update():
 
 def fetch_comments(connection, limit):
     
-    sql = f"""
+    sql = fr"""
     SELECT c.comment_id, c.body, c.parent_id, p.title as post_title, p.selftext as post_body
     FROM reddit.comments c
     JOIN reddit.posts p ON c.post_id = p.post_id
     WHERE c.gemini_scored_at IS NULL 
     AND c.submitted_to_gemini = FALSE
     AND c.distinguished IS NULL 
-    AND c.body NOT IN ('[deleted]', '[removed]')
-    AND LENGTH(c.body) > 10
+    AND c.body NOT IN ('[deleted]', '[removed]', '', ' ')
+    AND LENGTH(c.body) >= 2
+    
+    -- 1. The Emoji-Void Trap
+    AND LENGTH(TRIM(REGEXP_REPLACE(LOWER(c.body), '[^\w\s]', '', 'g'))) > 0
+    
+    -- 2. Drop Links & Gifs
+    AND c.body NOT ILIKE 'http%'
+    AND c.body NOT ILIKE '%giphy%'
+    AND c.body NOT ILIKE '%reddit.com%'
+    
+    -- 3. Drop Subreddit Reaction Links
+    AND c.body NOT ILIKE 'r/%'
+    AND c.body NOT ILIKE '/r/%'
+    
+    -- 4. Airtight Micro-Sentiment Routing (Notice \1 is raw, but {{2,}} is doubled)
+    AND TRIM(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(c.body), '[^\w\s]', '', 'g'), '(.)\1{{2,}}', '\1', 'g')) NOT IN (
+        -- Class A: Amplifiers
+        'this', 'based', 'agreed', 'exactly', 'true', '100', 'this is the way',
+        -- Class B: Amusements
+        'lol', 'lmao', 'lmfao', 'haha', 'dead', 'rofl',
+        -- Class C: Hostiles
+        'cap', 'bullshit', 'fake', 'cope', 'delusional',
+        -- Class D: Inquiries
+        'source', 'link', 'why', 'what', 'sauce',
+        -- Class E: Gratitude
+        'thanks', 'thank you', 'ty', 'tysm', 'thanks op',
+        -- Class F: Reddit Judgments
+        'nta', 'yta', 'esh', 'nah',
+        -- Class G: Bot Feedback
+        'good bot', 'bad bot',
+        -- Class H: Binary Yes/No
+        'yes', 'yeah', 'yep', 'no', 'nope'
+    )
     LIMIT {limit};
     """
     
@@ -309,7 +341,7 @@ def assemble_batch(comment_array):
     ro_array = [make_ro(i) for i in comment_array]
 
     ts = datetime.datetime.now().strftime('%Y%m%d_%H%M')
-    filename = f"sentiment_batch_{ts}.jsonl"
+    filename = f"/app/scripts/sentiment_batch_{ts}.jsonl"
 
     with open(filename, 'w') as f:
         for r in ro_array:
@@ -317,7 +349,7 @@ def assemble_batch(comment_array):
 
     return filename
 
-def hit_send_you_coward(limit = 2500):
+def hit_send_you_coward(limit = 1500):
     home = start_connection()
 
     pending_jobs = get_pending_jobs(home)
@@ -359,6 +391,6 @@ if __name__ == "__main__":
     download_update()
     
     print('--- Phase 2: Submitting new job ---')
-    hit_send_you_coward(limit = 1500)
+    hit_send_you_coward(limit = 1800)
     
     print('Cycle complete!')
