@@ -14,6 +14,7 @@ from random import randint
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
+import re
 
 DB_CONFIG = {
     "dbname": shh.db_name,
@@ -204,13 +205,35 @@ def download_update():
 
             for line in content.decode().splitlines():
                 data = json.loads(line)
-                raw_text = data['response']['candidates'][0]['content']['parts'][0]['text']
-
+                
                 try:
+                    candidate = data['response']['candidates'][0]
+                    
+                    if 'content' not in candidate:
+                        finish_reason = candidate.get('finishReason', 'UNKNOWN')
+                        
+                        request_text = data['request']['contents'][0]['parts'][0]['text']
+                        
+                        match = re.search(r'ID:\s*([a-zA-Z0-9_]+)', request_text)
+                        
+                        if match:
+                            comment_id = match.group(1)
+                            if finish_reason in ['PROHIBITED_CONTENT', 'SAFETY']:
+                                update_data.append((-10, -10, 0, f"API REJECTED: {finish_reason} (Extreme Violence / ToS Violation)", comment_id))
+                            else:
+                                failed_validation += 1
+                        else:
+                            failed_validation += 1
+                            
+                        continue
+
+                    raw_text = candidate['content']['parts'][0]['text']
                     scores = SentimentResponse.model_validate_json(raw_text)
                     comment_id = scores.comment_id
+                    
                     update_data.append((scores.valence, scores.social_intent, scores.outlook,
                                         scores.reasoning, comment_id))
+                                        
                 except Exception as e:
                     failed_validation += 1
             
@@ -327,6 +350,12 @@ def make_ro(comment):
         "request": {
             "systemInstruction": {"parts": [{"text": get_final_system_prompt()}]},
             "contents": [{"parts": [{"text": user_prompt}]}],
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+            ],
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseSchema": clean_schema(SentimentResponse)
@@ -341,7 +370,7 @@ def assemble_batch(comment_array):
     ro_array = [make_ro(i) for i in comment_array]
 
     ts = datetime.datetime.now().strftime('%Y%m%d_%H%M')
-    filename = f"/app/scripts/sentiment_batch_{ts}.jsonl"
+    filename = f"/app/scripts/batchjobs/sentiment_batch_{ts}.jsonl"
 
     with open(filename, 'w') as f:
         for r in ro_array:

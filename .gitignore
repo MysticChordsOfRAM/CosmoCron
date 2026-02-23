@@ -10,3 +10,4 @@ venv/
 .Rhistory
 .RData
 .Ruserdata
+*.jsonl
