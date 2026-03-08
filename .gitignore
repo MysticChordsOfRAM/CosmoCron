@@ -11,3 +11,4 @@ venv/
 .RData
 .Ruserdata
 *.jsonl
+check_error.py

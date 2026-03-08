@@ -24,7 +24,7 @@ DB_CONFIG = {
     "port": shh.db_port
 }
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-3.1-flash-lite-preview"
 
 client = genai.Client(api_key = shh.gemini_reddit_key)
 
@@ -232,7 +232,7 @@ def download_update():
                     comment_id = scores.comment_id
                     
                     update_data.append((scores.valence, scores.social_intent, scores.outlook,
-                                        scores.reasoning, comment_id))
+                                        scores.reasoning, comment_id, MODEL_NAME, job_id))
                                         
                 except Exception as e:
                     failed_validation += 1
@@ -241,8 +241,8 @@ def download_update():
                 UPDATE reddit.comments AS c SET
                     gemini_scored_at = NOW(),
                     valence = v.val, social_intent = v.soc, outlook = v.out, gemini_reasoning = v.reas,
-                    submitted_to_gemini = FALSE
-                FROM (VALUES %s) AS v(val, soc, out, reas, id)
+                    submitted_to_gemini = FALSE, model_version = v.mnm, batch_id = v.bid
+                FROM (VALUES %s) AS v(val, soc, out, reas, id, mnm, bid)
                 WHERE c.comment_id = v.id
             """
 
@@ -358,7 +358,10 @@ def make_ro(comment):
             ],
             "generationConfig": {
                 "responseMimeType": "application/json",
-                "responseSchema": clean_schema(SentimentResponse)
+                "responseSchema": clean_schema(SentimentResponse),
+                "thinkingConfig": {
+                    "thinkingLevel": "MINIMAL"
+              }
             }
           }
         }
@@ -394,6 +397,11 @@ def hit_send_you_coward(limit = 1500):
         home.close()
         return False
 
+    if len(comment_series) < 5000:
+        print(f"Only {len(comment_series)} comments - not enough to score - pausing.")
+        home.close()
+        return False
+
     load_file = assemble_batch(comment_series)
     up = client.files.upload(file = load_file, config = types.UploadFileConfig(mime_type = 'text/plain'))
     job = client.batches.create(model = MODEL_NAME, src = up.name)
@@ -420,6 +428,6 @@ if __name__ == "__main__":
     download_update()
     
     print('--- Phase 2: Submitting new job ---')
-    hit_send_you_coward(limit = 1800)
+    hit_send_you_coward(limit = 9000)
     
     print('Cycle complete!')
