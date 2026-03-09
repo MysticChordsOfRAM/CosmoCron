@@ -99,7 +99,7 @@ fetch_fred <- function(var_id) {
 
 }
 
-ALLDATA <- map_dfr(to_pull, fetch_fred) %>%
+ALLDATA <- map_dfr(to_pull, slowly(fetch_fred, rate = rate_delay(2))) %>%
   select(series_id, time_period, value) %>%
   left_join(fred_vars)
 
@@ -117,6 +117,8 @@ table_update_better(con, 'api', 'fred', ALLDATA)
 ###############################################################################/
 
 fetch_eia <- function(url) {
+
+  Sys.sleep(2)
 
   res = GET(url)
 
