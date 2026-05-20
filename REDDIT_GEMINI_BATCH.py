@@ -24,7 +24,7 @@ DB_CONFIG = {
     "port": shh.db_port
 }
 
-MODEL_NAME = "gemini-3.1-flash-lite-preview"
+MODEL_NAME = "gemini-3.1-flash-lite"
 
 client = genai.Client(api_key = shh.gemini_reddit_key)
 
@@ -397,7 +397,7 @@ def hit_send_you_coward(limit = 1500):
         home.close()
         return False
 
-    if len(comment_series) < 5000:
+    if len(comment_series) < 2000:
         print(f"Only {len(comment_series)} comments - not enough to score - pausing.")
         home.close()
         return False
@@ -428,6 +428,6 @@ if __name__ == "__main__":
     download_update()
     
     print('--- Phase 2: Submitting new job ---')
-    hit_send_you_coward(limit = 9000)
+    hit_send_you_coward(limit = 5000)
     
     print('Cycle complete!')

@@ -22,6 +22,9 @@ url <- 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
 series_detail <- dbGetQuery(con, 'SELECT * FROM jolts.series_ids')
 series_ids <- series_detail %>% pull(bls_series)
 
+end_yr <- Sys.Date() %>% year()
+first_yr <- end_yr - 12
+
 fetch_bls <- function(srs) {
 
   print(str_c("Fetching ", srs))
@@ -29,8 +32,8 @@ fetch_bls <- function(srs) {
   payload <- str_c(
     "{",
     '"seriesid":["', srs, '"],',
-    '"startyear":"2015",',
-    '"endyear":"2025",',
+    '"startyear":"', first_yr, '",',
+    '"endyear":"', end_yr, '",',
     '"registrationkey":"', api_key,
     '"}'
   )
