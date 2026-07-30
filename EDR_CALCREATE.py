@@ -13,11 +13,11 @@ from pydantic import BaseModel, Field
 
 import supersecrets as shh
 
-PDF_URL = "https://edr.state.fl.us/Content/calendar.pdf"
+PDF_URL = "https://edr.state.fl.us/Content/conference-notices/calendar.pdf"
 OUTPUT_FILE = f"/output/{shh.cal_id}.ics"
 API_KEY = shh.gemini_key
 #MODEL_NAME = 'gemini-3-flash-preview'
-MODEL_NAME = 'gemini-2.5-flash'
+MODEL_NAME = 'gemini-3.5-flash'
 
 DB_PARAMS = {'host': shh.db_ip,
 			 'user': shh.db_user,
